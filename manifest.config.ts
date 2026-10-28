@@ -28,7 +28,7 @@ export default defineManifest({
       all_frames: true,
     },
   ],
-  permissions: ['storage', 'activeTab', 'scripting', 'alarms', 'favicon'],
+  permissions: ['storage', 'alarms', 'favicon'],
   host_permissions: ['<all_urls>'],
   content_security_policy: {
     extension_pages: "script-src 'self'; object-src 'self'",
