@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { send } from '../lib/messages';
-import type { Credential } from '../lib/types';
+import type { Credential, Settings } from '../lib/types';
 import { canFillOn, parseSite } from '../lib/url';
 import { Favicon, errorMessage } from '../ui/components';
 import { CopyIcon, FillIcon, GearIcon, KeyIcon, LockIcon, PlusIcon, SearchIcon, UserIcon } from '../ui/icons';
@@ -20,7 +20,31 @@ function matchesQuery(c: Credential, q: string): boolean {
 
 export function VaultList({ items, tabUrl, onOpen, onAdd, onLock, toast }: Props) {
   const [query, setQuery] = useState('');
+  const [settings, setSettings] = useState<Settings | null>(null);
   const site = parseSite(tabUrl);
+  const autoFill = !!site && !!settings?.autoFillDomains.includes(site.domain);
+
+  useEffect(() => {
+    send('getSettings').then(setSettings, () => undefined);
+  }, []);
+
+  async function toggleAutoFill(enabled: boolean) {
+    if (!site || !settings) return;
+    const previous = settings;
+    setSettings({
+      ...previous,
+      autoFillDomains: enabled
+        ? [...previous.autoFillDomains, site.domain]
+        : previous.autoFillDomains.filter((d) => d !== site.domain),
+    });
+    try {
+      setSettings(await send('setAutoFill', { url: site.origin, enabled }));
+      toast(enabled ? '已開啟此網站的自動預填' : '已關閉此網站的自動預填');
+    } catch (err) {
+      setSettings(previous);
+      toast(errorMessage(err));
+    }
+  }
 
   const { forSite, others } = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -104,11 +128,24 @@ export function VaultList({ items, tabUrl, onOpen, onAdd, onLock, toast }: Props
             {forSite.length === 0 ? (
               <p className="px-2 py-2 text-xs text-slate-500">此網站尚未儲存密碼。</p>
             ) : (
-              <ul>
-                {forSite.map((c) => (
-                  <Row key={c.id} c={c} fillable />
-                ))}
-              </ul>
+              <>
+                <ul>
+                  {forSite.map((c) => (
+                    <Row key={c.id} c={c} fillable />
+                  ))}
+                </ul>
+                {settings && (
+                  <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-xs text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="accent-brand-500"
+                      checked={autoFill}
+                      onChange={(e) => toggleAutoFill(e.target.checked)}
+                    />
+                    在此網站自動預填最近使用的帳號
+                  </label>
+                )}
+              </>
             )}
           </section>
         )}

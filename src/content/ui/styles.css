@@ -243,6 +243,19 @@ button {
   background: var(--ps-hover);
   letter-spacing: 0.2em;
 }
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--ps-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.check input {
+  margin: 0;
+  accent-color: var(--ps-brand);
+}
 .warn {
   background: var(--ps-warn-bg);
   color: var(--ps-warn-fg);

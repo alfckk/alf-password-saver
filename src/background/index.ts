@@ -1,6 +1,6 @@
 import { credentialsToCsv, parseCredentialCsv } from '../lib/csv';
 import type { MessageMap, MessageType, Request, Response, TabMessage } from '../lib/messages';
-import type { CredentialSummary, PendingSave, PendingSaveView } from '../lib/types';
+import type { CredentialSummary, PendingSave, PendingSaveView, Settings } from '../lib/types';
 import { canFillOn, parseSite } from '../lib/url';
 import * as pending from './pending';
 import { getSettings, updateSettings } from './settings';
@@ -25,7 +25,8 @@ function pageOf(sender: Sender): { url: string; tabId: number } {
 
 async function resetAutoLock(): Promise<void> {
   const { autoLockMinutes } = await getSettings();
-  await chrome.alarms.create(AUTOLOCK_ALARM, { delayInMinutes: autoLockMinutes });
+  if (autoLockMinutes === 0) await chrome.alarms.clear(AUTOLOCK_ALARM);
+  else await chrome.alarms.create(AUTOLOCK_ALARM, { delayInMinutes: autoLockMinutes });
 }
 
 async function notifyTab(tabId: number, message: TabMessage): Promise<void> {
@@ -45,7 +46,10 @@ async function resolveKind(p: PendingSave): Promise<PendingSave | null> {
   if (!(await vault.isUnlocked())) return { ...p, kind: null, existingId: null };
   const existing = await vault.findByLogin(p.origin, p.username);
   if (!existing) return { ...p, kind: 'new', existingId: null };
-  if (existing.password === p.password) return null;
+  if (existing.password === p.password) {
+    await vault.markUsed(existing.id);
+    return null;
+  }
   return { ...p, kind: 'update', existingId: existing.id };
 }
 
@@ -56,6 +60,16 @@ async function refreshAllPending(): Promise<void> {
     else await pending.clearPending(p.tabId);
     await notifyTab(p.tabId, { type: 'pendingSaveChanged' });
   }
+}
+
+async function setAutoFill(domain: string, enabled: boolean): Promise<Settings> {
+  const { autoFillDomains } = await getSettings();
+  if (autoFillDomains.includes(domain) === enabled) return getSettings();
+  const next = await updateSettings({
+    autoFillDomains: enabled ? [...autoFillDomains, domain] : autoFillDomains.filter((d) => d !== domain),
+  });
+  await broadcast({ type: 'autoFillChanged' });
+  return next;
 }
 
 async function onLockChanged(): Promise<void> {
@@ -72,6 +86,7 @@ const extensionOnly = new Set<MessageType>([
   'exportCsv',
   'getSettings',
   'updateSettings',
+  'setAutoFill',
   'fillInActiveTab',
 ]);
 
@@ -125,7 +140,14 @@ const handlers: { [K in MessageType]: Handler<K> } = {
   async updateSettings(changes) {
     const next = await updateSettings(changes);
     if (changes.autoLockMinutes !== undefined && (await vault.isUnlocked())) await resetAutoLock();
+    if (changes.autoFillDomains !== undefined) await broadcast({ type: 'autoFillChanged' });
     return next;
+  },
+
+  async setAutoFill({ url, enabled }) {
+    const site = parseSite(url);
+    if (!site) throw new Error('網址無效');
+    return setAutoFill(site.domain, enabled);
   },
 
   async fillInActiveTab({ id }) {
@@ -175,6 +197,16 @@ const handlers: { [K in MessageType]: Handler<K> } = {
     return { username: cred.username, password: cred.password };
   },
 
+  async getAutoFill(_, sender) {
+    const { url } = pageOf(sender);
+    const site = parseSite(url);
+    const { autoFillDomains } = await getSettings();
+    if (!site || !autoFillDomains.includes(site.domain) || !(await vault.isUnlocked())) return null;
+    const [latest] = await vault.matchesFor(url);
+    if (!latest) return null;
+    return { username: latest.username, password: latest.password };
+  },
+
   async captureUsername({ username }, sender) {
     const { url, tabId } = pageOf(sender);
     const site = parseSite(url);
@@ -208,16 +240,19 @@ const handlers: { [K in MessageType]: Handler<K> } = {
     const { tabId } = pageOf(sender);
     const p = await pending.getPending(tabId);
     if (!p) return null;
+    const { autoFillDomains } = await getSettings();
+    const domain = parseSite(p.origin)?.domain;
     const view: PendingSaveView = {
       hostname: p.hostname,
       username: p.username,
       kind: p.kind,
       insecure: !p.origin.startsWith('https:'),
+      autoFill: !!domain && autoFillDomains.includes(domain),
     };
     return view;
   },
 
-  async resolvePendingSave({ action, username }, sender) {
+  async resolvePendingSave({ action, username, autoFill }, sender) {
     const { tabId } = pageOf(sender);
     const p = await pending.getPending(tabId);
     if (!p) return;
@@ -228,8 +263,12 @@ const handlers: { [K in MessageType]: Handler<K> } = {
     } else if (action === 'save') {
       const finalUsername = username ?? p.username;
       const existing = await vault.findByLogin(p.origin, finalUsername);
-      if (existing) await vault.update(existing.id, { password: p.password });
-      else await vault.create({ origin: p.origin, username: finalUsername, password: p.password });
+      const saved = existing
+        ? await vault.update(existing.id, { password: p.password })
+        : await vault.create({ origin: p.origin, username: finalUsername, password: p.password });
+      await vault.markUsed(saved.id);
+      const site = parseSite(p.origin);
+      if (site && autoFill !== undefined) await setAutoFill(site.domain, autoFill);
     }
     await pending.clearPending(tabId);
   },

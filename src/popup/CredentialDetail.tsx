@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { send } from '../lib/messages';
 import type { Credential } from '../lib/types';
+import { parseSite } from '../lib/url';
 import { Favicon, errorMessage } from '../ui/components';
 import { BackIcon, CopyIcon, EditIcon, ExternalIcon, EyeIcon, EyeOffIcon, TrashIcon, WarnIcon } from '../ui/icons';
 
@@ -18,6 +19,26 @@ const formatDate = (ts: number) =>
 export function CredentialDetail({ credential: c, onBack, onEdit, onDeleted, toast }: Props) {
   const [revealed, setRevealed] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [autoFillDomains, setAutoFillDomains] = useState<string[] | null>(null);
+  const domain = parseSite(c.origin)?.domain;
+  const autoFill = !!domain && !!autoFillDomains?.includes(domain);
+
+  useEffect(() => {
+    send('getSettings').then((s) => setAutoFillDomains(s.autoFillDomains), () => undefined);
+  }, []);
+
+  async function toggleAutoFill(enabled: boolean) {
+    if (!domain || !autoFillDomains) return;
+    const previous = autoFillDomains;
+    setAutoFillDomains(enabled ? [...previous, domain] : previous.filter((d) => d !== domain));
+    try {
+      setAutoFillDomains((await send('setAutoFill', { url: c.origin, enabled })).autoFillDomains);
+      toast(enabled ? '已開啟此網站的自動預填' : '已關閉此網站的自動預填');
+    } catch (err) {
+      setAutoFillDomains(previous);
+      toast(errorMessage(err));
+    }
+  }
 
   async function copy(text: string, what: string) {
     await navigator.clipboard.writeText(text);
@@ -110,6 +131,21 @@ export function CredentialDetail({ credential: c, onBack, onEdit, onDeleted, toa
             }
           />
         </div>
+
+        {domain && autoFillDomains && (
+          <label className="card mt-3 flex cursor-pointer items-center gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">在此網站自動預填</div>
+              <div className="text-xs text-slate-500">開啟 {domain} 的登入頁時，自動填入最近使用的帳號</div>
+            </div>
+            <input
+              type="checkbox"
+              className="h-4 w-4 flex-none accent-brand-500"
+              checked={autoFill}
+              onChange={(e) => toggleAutoFill(e.target.checked)}
+            />
+          </label>
+        )}
 
         {c.notes && (
           <div className="card mt-3 px-4 py-3">

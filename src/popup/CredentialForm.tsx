@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { send } from '../lib/messages';
 import type { Credential } from '../lib/types';
 import { parseSite } from '../lib/url';
@@ -21,8 +21,18 @@ export function CredentialForm({ credential, defaultUrl, onCancel, onSaved }: Pr
     password: credential?.password ?? '',
     notes: credential?.notes ?? '',
   });
+  const [autoFillDomains, setAutoFillDomains] = useState<string[] | null>(null);
+  const [autoFill, setAutoFill] = useState<boolean | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const site = parseSite(form.origin);
+  const siteAutoFill = !!site && !!autoFillDomains?.includes(site.domain);
+  const autoFillChecked = autoFill ?? siteAutoFill;
+
+  useEffect(() => {
+    send('getSettings').then((s) => setAutoFillDomains(s.autoFillDomains), () => undefined);
+  }, []);
 
   const set = (key: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -35,6 +45,9 @@ export function CredentialForm({ credential, defaultUrl, onCancel, onSaved }: Pr
       const saved = credential
         ? await send('update', { id: credential.id, changes: form })
         : await send('create', form);
+      if (autoFillDomains && autoFillChecked !== siteAutoFill) {
+        await send('setAutoFill', { url: saved.origin, enabled: autoFillChecked });
+      }
       onSaved(saved);
     } catch (err) {
       setError(errorMessage(err));
@@ -69,6 +82,21 @@ export function CredentialForm({ credential, defaultUrl, onCancel, onSaved }: Pr
           <label className="label" htmlFor="f-password">密碼</label>
           <PasswordInput id="f-password" value={form.password} onChange={set('password')} autoComplete="new-password" required />
         </div>
+        {autoFillDomains && (
+          <label
+            className="flex cursor-pointer items-center gap-2 text-xs text-slate-600 dark:text-slate-300"
+            title="開啟登入頁時自動填入此網站最近使用的帳號"
+          >
+            <input
+              type="checkbox"
+              className="accent-brand-500"
+              checked={autoFillChecked}
+              disabled={!site}
+              onChange={(e) => setAutoFill(e.target.checked)}
+            />
+            在此網站開啟自動預填{site ? `（${site.domain}）` : ''}
+          </label>
+        )}
         <div>
           <label className="label" htmlFor="f-notes">備註</label>
           <textarea id="f-notes" className="input min-h-[72px] resize-y" value={form.notes} onChange={set('notes')} />

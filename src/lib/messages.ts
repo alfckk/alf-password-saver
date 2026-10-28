@@ -23,16 +23,18 @@ export interface MessageMap {
   exportCsv: [{ masterPassword: string }, { csv: string }];
   getSettings: [void, Settings];
   updateSettings: [Partial<Settings>, Settings];
+  setAutoFill: [{ url: string; enabled: boolean }, Settings];
   fillInActiveTab: [{ id: string }, void];
   openPopup: [void, void];
 
   // Content scripts. Page origin is always taken from the sender, never from the payload.
   getMatches: [void, { status: VaultStatus; matches: CredentialSummary[] }];
   fill: [{ id: string }, { username: string; password: string }];
+  getAutoFill: [void, { username: string; password: string } | null];
   captureUsername: [{ username: string }, void];
   captureLogin: [{ username: string; password: string }, void];
   getPendingSave: [void, PendingSaveView | null];
-  resolvePendingSave: [{ action: 'save' | 'never' | 'dismiss'; username?: string }, void];
+  resolvePendingSave: [{ action: 'save' | 'never' | 'dismiss'; username?: string; autoFill?: boolean }, void];
 }
 
 export type MessageType = keyof MessageMap;
@@ -59,4 +61,5 @@ export async function send<K extends MessageType>(
 export type TabMessage =
   | { type: 'pendingSaveChanged' }
   | { type: 'vaultStatusChanged' }
+  | { type: 'autoFillChanged' }
   | { type: 'fillCredential'; username: string; password: string };

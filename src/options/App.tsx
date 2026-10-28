@@ -3,6 +3,8 @@ import { send } from '../lib/messages';
 import type { Settings, VaultStatus } from '../lib/types';
 import { Logo, Toast, useToast } from '../ui/components';
 import { LockIcon } from '../ui/icons';
+import { About } from './About';
+import { AutoFillList } from './AutoFillList';
 import { ImportExport } from './ImportExport';
 import { NeverSaveList } from './NeverSaveList';
 import { SecuritySettings } from './SecuritySettings';
@@ -54,8 +56,10 @@ export function App() {
 
       <div className="space-y-6">
         <SecuritySettings settings={settings} onChange={save} />
+        <AutoFillList settings={settings} onChange={save} />
         <NeverSaveList settings={settings} onChange={save} />
         <ImportExport status={status} onStatusChange={reload} toast={showToast} />
+        <About />
       </div>
       <Toast message={toast} />
     </div>

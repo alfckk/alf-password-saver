@@ -4,7 +4,7 @@ import { CloseIcon, KeyIcon, LockIcon } from './icons';
 
 interface Props {
   pending: PendingSaveView;
-  onSave: (username: string) => Promise<void>;
+  onSave: (username: string, autoFill?: boolean) => Promise<void>;
   onNever: () => void;
   onDismiss: () => void;
   onUnlock: () => void;
@@ -12,10 +12,12 @@ interface Props {
 
 export function SavePrompt({ pending, onSave, onNever, onDismiss, onUnlock }: Props) {
   const [username, setUsername] = useState(pending.username);
+  const [autoFill, setAutoFill] = useState(pending.autoFill);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => setUsername(pending.username), [pending.username]);
+  useEffect(() => setAutoFill(pending.autoFill), [pending.autoFill]);
 
   const locked = pending.kind === null;
   const isUpdate = pending.kind === 'update';
@@ -24,7 +26,7 @@ export function SavePrompt({ pending, onSave, onNever, onDismiss, onUnlock }: Pr
     setBusy(true);
     setError('');
     try {
-      await onSave(username);
+      await onSave(username, isUpdate ? undefined : autoFill);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -79,6 +81,12 @@ export function SavePrompt({ pending, onSave, onNever, onDismiss, onUnlock }: Pr
             <label>密碼</label>
             <div className="masked">••••••••••</div>
           </div>
+          {!isUpdate && (
+            <label className="check">
+              <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFill(e.target.checked)} />
+              在此網站開啟自動預填
+            </label>
+          )}
           {error && <div className="error">{error}</div>}
           <div className="actions">
             {!isUpdate && (

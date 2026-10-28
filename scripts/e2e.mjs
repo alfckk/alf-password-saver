@@ -163,6 +163,119 @@ try {
     assert((await frame.locator('#password').inputValue()) === 'N3w!Pass456', '密碼不是更新後的值');
   });
 
+  await step('自動預填：選定的網站載入時填入最近使用的帳號', async () => {
+    await page.goto(extUrl('src/options/index.html'));
+    const section = page.locator('section:has-text("自動預填的網站")');
+    await section.locator('input').fill('http://localhost:5599/');
+    await section.locator('button:has-text("新增")').click();
+    await section.locator('text=localhost').waitFor();
+    await page.goto(`${BASE}/basic.html`);
+    await page.waitForFunction(() => document.querySelector('#password').value !== '', null, { timeout: 5000 });
+    assert((await page.inputValue('#email')) === 'alice@example.com', 'email 未預填');
+    assert((await page.inputValue('#password')) === 'N3w!Pass456', '密碼未預填最近使用的帳號');
+  });
+
+  await step('自動預填：未選定的網站不會預填', async () => {
+    await page.goto(extUrl('src/options/index.html'));
+    const section = page.locator('section:has-text("自動預填的網站")');
+    await section.locator('button[title="移除"]').click();
+    await section.locator('text=目前沒有任何網站。').waitFor();
+    await page.goto(`${BASE}/basic.html`);
+    await page.waitForTimeout(1000);
+    assert((await page.inputValue('#password')) === '', '不應預填');
+  });
+
+  const autoFillDomains = () =>
+    sw.evaluate(async () => (await chrome.storage.local.get('settings')).settings?.autoFillDomains ?? []);
+
+  await step('儲存提示：勾選後開啟此網站的自動預填', async () => {
+    await page.goto(`${BASE}/spa.html`);
+    await page.waitForSelector('#pass');
+    await page.fill('#user', 'dave');
+    await page.fill('#pass', 'Dave!pw123');
+    await page.click('#go');
+    const box = ui(page).locator('.prompt .check input');
+    await box.waitFor({ timeout: 5000 });
+    assert(!(await box.isChecked()), '預設不應勾選');
+    await box.check();
+    await page.screenshot({ path: join(OUT, 'save-prompt-autofill.png') });
+    await ui(page).locator('.prompt .btn-primary').click();
+    await ui(page).locator('.prompt').waitFor({ state: 'detached' });
+    const domains = await autoFillDomains();
+    assert(domains.includes('localhost'), `自動預填清單：${domains}`);
+    await sw.evaluate(async () => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: { ...settings, autoFillDomains: [] } });
+    });
+  });
+
+  await step('Popup 新增密碼時可選擇開啟自動預填', async () => {
+    const popup = await context.newPage();
+    await popup.goto(extUrl('src/popup/index.html'));
+    await popup.click('button[title="新增密碼"]');
+    await popup.fill('#f-origin', 'https://example.org/login');
+    await popup.fill('#f-username', 'erin');
+    await popup.fill('#f-password', 'Erin!pw456');
+    await popup.check('label:has-text("在此網站開啟自動預填") input');
+    await popup.screenshot({ path: join(OUT, 'popup-add-autofill.png') });
+    await popup.click('button:has-text("儲存")');
+    await popup.waitForSelector('text=使用者名稱');
+    await popup.close();
+    const domains = await autoFillDomains();
+    assert(domains.includes('example.org'), `自動預填清單：${domains}`);
+  });
+
+  await step('已有的記錄：詳細資料頁可切換自動預填', async () => {
+    const popup = await context.newPage();
+    await popup.goto(extUrl('src/popup/index.html'));
+    await popup.fill('input[placeholder="搜尋密碼"]', 'bob');
+    await popup.locator('ul li').first().locator('button').first().click();
+    const box = popup.locator('label:has-text("在此網站自動預填") input');
+    await box.waitFor();
+    assert(!(await box.isChecked()), '預設不應勾選');
+    await box.check();
+    await popup.waitForSelector('text=已開啟此網站的自動預填');
+    await popup.screenshot({ path: join(OUT, 'popup-detail-autofill.png') });
+    assert((await autoFillDomains()).includes('localhost'), '應開啟 localhost 的自動預填');
+    await box.uncheck();
+    await popup.waitForSelector('text=已關閉此網站的自動預填');
+    assert(!(await autoFillDomains()).includes('localhost'), '應關閉 localhost 的自動預填');
+    await popup.close();
+  });
+
+  await step('已有的記錄：編輯表單可關閉自動預填', async () => {
+    const popup = await context.newPage();
+    await popup.goto(extUrl('src/popup/index.html'));
+    await popup.fill('input[placeholder="搜尋密碼"]', 'erin');
+    await popup.locator('ul li').first().locator('button').first().click();
+    await popup.click('button[title="編輯"]');
+    const box = popup.locator('label:has-text("在此網站開啟自動預填") input');
+    assert(await box.isChecked(), '應反映目前已開啟的狀態');
+    await box.uncheck();
+    await popup.click('button:has-text("儲存")');
+    await popup.waitForSelector('text=已儲存');
+    await popup.close();
+    assert(!(await autoFillDomains()).includes('example.org'), '應關閉 example.org 的自動預填');
+  });
+
+  await step('自動鎖定可設為「永不」並清除計時器', async () => {
+    await page.goto(extUrl('src/options/index.html'));
+    const select = page.locator('section:has-text("安全性") select');
+    await select.selectOption('0');
+    await page.waitForSelector('text=保險庫會一直保持解鎖');
+    await page.waitForTimeout(300);
+    assert((await sw.evaluate(() => chrome.alarms.get('autolock'))) == null, '不應有自動鎖定計時器');
+    await select.selectOption('15');
+    await page.waitForTimeout(300);
+    assert((await sw.evaluate(() => chrome.alarms.get('autolock'))) != null, '應恢復自動鎖定計時器');
+  });
+
+  await step('設定頁顯示作者與版本', async () => {
+    const about = page.locator('section:has-text("關於")');
+    await about.locator('text=Alvin CHIN').waitFor();
+    await about.locator('text=0.1.1').waitFor();
+  });
+
   await step('Popup 搜尋與詳細資料頁', async () => {
     const { popup } = await popupItems();
     await popup.screenshot({ path: join(OUT, 'popup-list.png') });

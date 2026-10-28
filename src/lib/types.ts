@@ -36,13 +36,17 @@ export interface VaultRecord {
 }
 
 export interface Settings {
+  /** 0 = never lock automatically (the vault still locks when the browser closes). */
   autoLockMinutes: number;
   neverSaveDomains: string[];
+  /** Sites where the most recently used login is filled in as soon as the form appears. */
+  autoFillDomains: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   autoLockMinutes: 15,
   neverSaveDomains: [],
+  autoFillDomains: [],
 };
 
 export interface PendingSave {
@@ -63,6 +67,7 @@ export interface PendingSaveView {
   username: string;
   kind: 'new' | 'update' | null;
   insecure: boolean;
+  autoFill: boolean;
 }
 
 export interface VaultStatus {

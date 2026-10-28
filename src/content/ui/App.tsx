@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { send, type TabMessage } from '../../lib/messages';
 import type { CredentialSummary, PendingSaveView, VaultStatus } from '../../lib/types';
 import { hasLoginFields, isLoginField } from '../detector';
-import { fillCredential } from '../fill';
+import { fillCredential, prefillCredential } from '../fill';
 import { FieldIcon } from './FieldIcon';
 import { FillDropdown } from './FillDropdown';
 import { SavePrompt } from './SavePrompt';
@@ -47,10 +47,23 @@ export function App({ isTop }: Props) {
     }
   }, [isTop]);
 
+  const tryPrefill = useCallback(async () => {
+    if (!hasLoginFields()) return;
+    try {
+      const creds = await send('getAutoFill');
+      if (creds) prefillCredential(creds.username, creds.password);
+    } catch {
+      // Extension reloaded or service worker unavailable.
+    }
+  }, []);
+
   useEffect(() => {
     void refreshPending();
-    if (hasLoginFields()) void refreshMatches();
-  }, [refreshMatches, refreshPending]);
+    if (hasLoginFields()) {
+      void refreshMatches();
+      void tryPrefill();
+    }
+  }, [refreshMatches, refreshPending, tryPrefill]);
 
   useEffect(() => {
     const onFocusIn = async (e: FocusEvent) => {
@@ -112,7 +125,10 @@ export function App({ isTop }: Props) {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         const now = hasLoginFields();
-        if (now && !seen) void refreshMatches();
+        if (now && !seen) {
+          void refreshMatches();
+          void tryPrefill();
+        }
         seen = now;
       }, 400);
     });
@@ -121,19 +137,22 @@ export function App({ isTop }: Props) {
       observer.disconnect();
       window.clearTimeout(timer);
     };
-  }, [refreshMatches]);
+  }, [refreshMatches, tryPrefill]);
 
   useEffect(() => {
     const listener = (message: TabMessage) => {
       if (message.type === 'pendingSaveChanged') void refreshPending();
-      else if (message.type === 'vaultStatusChanged') void refreshMatches();
+      else if (message.type === 'vaultStatusChanged') {
+        void refreshMatches();
+        void tryPrefill();
+      } else if (message.type === 'autoFillChanged') void tryPrefill();
       else if (message.type === 'fillCredential' && isTop) {
         fillCredential(message.username, message.password, fieldRef.current);
       }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [isTop, refreshMatches, refreshPending]);
+  }, [isTop, refreshMatches, refreshPending, tryPrefill]);
 
   async function pick(id: string) {
     try {
@@ -144,8 +163,8 @@ export function App({ isTop }: Props) {
     }
   }
 
-  async function resolve(action: 'save' | 'never' | 'dismiss', username?: string) {
-    await send('resolvePendingSave', { action, username });
+  async function resolve(action: 'save' | 'never' | 'dismiss', username?: string, autoFill?: boolean) {
+    await send('resolvePendingSave', { action, username, autoFill });
     setPending(null);
     if (action === 'save') void refreshMatches();
   }
@@ -173,7 +192,7 @@ export function App({ isTop }: Props) {
       {pending && (
         <SavePrompt
           pending={pending}
-          onSave={(username) => resolve('save', username)}
+          onSave={(username, autoFill) => resolve('save', username, autoFill)}
           onNever={() => void resolve('never')}
           onDismiss={() => void resolve('dismiss')}
           onUnlock={() => void send('openPopup')}
