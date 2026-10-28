@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>多步驟登入 - 帳號</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <form class="card" id="step1">
+      <h1>登入（第 1 步）</h1>
+      <label for="identifier">電子郵件或電話</label>
+      <input id="identifier" name="identifier" type="email" autocomplete="username" />
+      <button type="submit">下一步</button>
+    </form>
+    <script>
+      document.getElementById('step1').addEventListener('submit', (e) => {
+        e.preventDefault();
+        location.href = 'multistep-2.html';
+      });
+    </script>
+  </body>
+</html>

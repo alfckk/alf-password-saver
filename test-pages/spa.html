@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SPA 登入</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app" class="card">載入中…</div>
+    <script>
+      const app = document.getElementById('app');
+      // Render the login UI late, without a <form>, like many SPA frameworks do.
+      setTimeout(() => {
+        app.innerHTML = `
+          <h1>SPA 登入</h1>
+          <label>帳號</label>
+          <input id="user" placeholder="使用者名稱" />
+          <label>密碼</label>
+          <input id="pass" type="password" />
+          <div role="button" id="go" style="margin-top:20px;padding:10px;text-align:center;background:#0f172a;color:#fff;border-radius:8px;cursor:pointer">Sign in</div>
+        `;
+        document.getElementById('go').addEventListener('click', () => {
+          const user = document.getElementById('user').value;
+          app.innerHTML = `<h1>歡迎，${user.replace(/</g, '&lt;')}</h1><p>畫面已切換但網址未變。</p>`;
+        });
+      }, 1000);
+    </script>
+  </body>
+</html>

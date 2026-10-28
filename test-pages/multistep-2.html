@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>多步驟登入 - 密碼</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <form class="card" id="step2">
+      <h1>登入（第 2 步）</h1>
+      <label for="pw">密碼</label>
+      <input id="pw" name="pw" type="password" autocomplete="current-password" />
+      <button type="submit">登入</button>
+    </form>
+    <script>
+      document.getElementById('step2').addEventListener('submit', (e) => {
+        e.preventDefault();
+        location.href = 'success.html';
+      });
+    </script>
+  </body>
+</html>
